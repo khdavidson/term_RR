@@ -1,0 +1,283 @@
+
+---
+title: "**Conuma terminal run reconstruction**"
+date: 'Last update: `r Sys.Date()`'
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+    toc_depth: 5
+    number_sections: true
+    theme: lumen
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+knitr::opts_chunk$set(message = F)
+knitr::opts_chunk$set(warning = F)
+
+# load libraries -------------------
+library(tidyverse)
+library(leaflet)
+library(readxl)
+library(here)
+library(htmltools)
+
+# set source location to work from -------------------
+setwd(here("chinook"))
+source("conuma_ck_termRR.R", local = knitr::knit_global())
+
+
+# misc parameters, functions, variables, etc. -------------------
+RR_year <- 2021
+pal <- colorFactor(c("navy", "red", "orange"), domain = unique(spatLookup$sector))    # for leaflet() 
+my_icons <- awesomeIcons(icon = "home",
+                         markerColor = "green",
+                         library = "glyphicon")
+```
+
+
+
+# **Introduction**
+*This can be amended - taken from original Excel file *
+
+The objectives are to: 
+
+1. Estimate **terminal returns** to the area **by age**. The age breakdown is essential for Chinook forecasting and modelling
+2. Estimate the **hatchery contribution** to the terminal runs
+3. Estimate the potential **egg deposition**. For Chinook, we are defining escapement targets by eggs due to the variable age-at-return and variable contribution of females to spawner totals.
+4. Estimate terminal **harvest rates**
+
+<br>
+
+Data sources include:
+
+* Catch data:
+    + Sport age data: from 'BIOCNxxx.xlsx' files. Ages pooled over sub-areas and weighted by stat week sample size. 
+    + Sport termal mark data: from '2013 - X:\WCVI\THERMAL_MARK_PROJECT\Data\Biodata\Sport\Area_25_2009to2013Chinook_Bio_Recreational_Crest_oto_age.xlsx' files.
+* Escapement data:
+    + Query escapement and broodstock estimates from New Escapement Index.xls or from Escapement Coordinator's PDF summaries.
+    + Query escapement age data from NuSEDs; cross check with WCVI files for additional data not entered into NuSEDs; sample N is usually higher than for otolith-linked biodata; ages are uncorrected for sex stratified sampling; for RunRecon years, these data were used to calculate age, rather than pulling from PADs directly
+    + If otolith data are available and linked to biodata, summarize to determine % marked by age; summarize further to determine % marked by age and sex.
+    + Correct escapement sample age data for sex-stratified sampling: 
+        + Determine sex at age proportions from biodata
+        + Use first set sex ratio data from hatchery staff (Conuma) to calculate correction factors
+        + Note: do not correct broodstock age ratio as the hatchery uses 3:3 males:females when spawning (more similar to the sex stratified sample)
+
+<br>
+
+<br> 
+
+
+
+
+
+
+# **Study area**
+
+![Conuma terminal run reconstruction study area](C:/Users/DAVIDSONKA/Documents/Notes, records, resources/Area maps/statarea25_maponly.pdf "Conuma terminal run reconstruction study area"){width=100% height=700}
+
+<br>
+
+
+
+
+
+# **Data exploration** 
+
+## **Spatial data** {.tabset .tabset-fade}
+
+Spatial distribution of chinook catch in commerical (red), EO (navy), and sport (gold) fisheries scaled by size bins (<500, 500-999, 1000-1499, and >1500. Catch data are overlaid by available biosample data (green rings), with size scaled based on available sample size 
+
+### `r RR_year` catch + biodata
+
+Catch here is from `r RR_year` and overlaid with `r RR_year` biosamples. 
+
+```{r}
+leaflet() %>% 
+  #addProviderTiles(providers$Stamen.TerrainBackground) %>%
+  addProviderTiles(providers$CartoDB.VoyagerNoLabels) %>%
+  #addProviderTiles(providers$OpenStreetMap.HOT) %>%
+  #addProviderTiles(providers$Esri.OceanBasemap) %>%
+  #addProviderTiles(providers$Esri.WorldImagery) %>%
+  addWMSTiles(
+    "https://gis.ngdc.noaa.gov/arcgis/services/graticule/MapServer/WMSServer/",
+    layers = c("1-degree grid", "5-degree grid"),
+    options = WMSTileOptions(format = "image/png8", transparent = TRUE),
+    attribution = NULL,group = 'Graticules') %>%
+  setView(lng = -126.57, lat =  49.70, zoom = 9.4) %>%
+  hideGroup(c('Place names')) %>%
+  # catch markers ---
+  addCircleMarkers(data=catConFull%>%filter(YEAR==RR_year)%>%group_by(sector,RUN_RECON_AREA, lat,long,label)%>%
+                     summarize(Kept=sum(Kept,na.rm=T))%>%filter(Kept>0 & !is.na(RUN_RECON_AREA)),
+    radius=~ifelse(Kept<500, 4, ifelse(Kept>=500&Kept<1000, 7, ifelse(Kept>=1000&Kept<1500, 10, 14))), 
+    color=~pal(sector), stroke=F,  fillOpacity=0.8, label=~htmlEscape(label)) %>%
+  # rec biosample markers ---
+  addCircleMarkers(data=bioConFullt%>%filter(!is.na(lat) & YEAR==RR_year)%>%
+                     group_by(YEAR,sector,RUN_RECON_AREA,CREEL_SUB_AREA,lat,long)%>%summarize(n=n(),label=unique(label)),
+    radius=~ifelse(n<10, 3, ifelse(n>=10&n<50, 6, ifelse(n>=50&n<75, 8, ifelse(n>=75&n<100, 10, 12)))),
+    color="green", stroke=T, fillOpacity=0, label=~htmlEscape(label)) 
+```
+
+### `r RR_year` catch + `r RR_year-1` biodata
+
+Catch here is from `r RR_year` and overlaid with `r RR_year-1` biosamples. 
+
+```{r}
+leaflet() %>% 
+  #addProviderTiles(providers$Stamen.TerrainBackground) %>%
+  addProviderTiles(providers$CartoDB.VoyagerNoLabels) %>%
+  #addProviderTiles(providers$OpenStreetMap.HOT) %>%
+  #addProviderTiles(providers$Esri.OceanBasemap) %>%
+  #addProviderTiles(providers$Esri.WorldImagery) %>%
+  addWMSTiles(
+    "https://gis.ngdc.noaa.gov/arcgis/services/graticule/MapServer/WMSServer/",
+    layers = c("1-degree grid", "5-degree grid"),
+    options = WMSTileOptions(format = "image/png8", transparent = TRUE),
+    attribution = NULL,group = 'Graticules') %>%
+  
+  setView(lng = -126.57, lat =  49.70, zoom = 9.4) %>%
+  hideGroup(c('Place names')) %>%
+  addCircleMarkers(data=catConFull%>%filter(YEAR==RR_year)%>%group_by(sector,RUN_RECON_AREA, lat,long,label)%>%
+                     summarize(Kept=sum(Kept,na.rm=T))%>%filter(Kept>0 & !is.na(RUN_RECON_AREA)),
+    radius=~ifelse(Kept<500, 4, ifelse(Kept>=500&Kept<1000, 7, ifelse(Kept>=1000&Kept<1500, 10, 14))), 
+    color=~pal(sector), stroke=F,  fillOpacity=0.8, label=~htmlEscape(label)) %>%
+  # rec biosample markers ---
+  addCircleMarkers(data=bioConFullt%>%filter(!is.na(lat) & YEAR==RR_year-1)%>%
+                     group_by(YEAR,sector,RUN_RECON_AREA,CREEL_SUB_AREA,lat,long)%>%summarize(n=n(),label=unique(label)),
+    radius=~ifelse(n<10, 3, ifelse(n>=10&n<50, 6, ifelse(n>=50&n<75, 8, ifelse(n>=75&n<100, 10, 12)))),
+    color="green", stroke=T, fillOpacity=0, label=~htmlEscape(label)) 
+```
+
+### `r RR_year` catch + `r RR_year-2` biodata
+
+Catch here is from `r RR_year` and overlaid with `r RR_year-2` biosamples. 
+
+```{r}
+leaflet() %>% 
+  #addProviderTiles(providers$Stamen.TerrainBackground) %>%
+  addProviderTiles(providers$CartoDB.VoyagerNoLabels) %>%
+  #addProviderTiles(providers$OpenStreetMap.HOT) %>%
+  #addProviderTiles(providers$Esri.OceanBasemap) %>%
+  #addProviderTiles(providers$Esri.WorldImagery) %>%
+  addWMSTiles(
+    "https://gis.ngdc.noaa.gov/arcgis/services/graticule/MapServer/WMSServer/",
+    layers = c("1-degree grid", "5-degree grid"),
+    options = WMSTileOptions(format = "image/png8", transparent = TRUE),
+    attribution = NULL,group = 'Graticules') %>%
+  
+  setView(lng = -126.57, lat =  49.70, zoom = 9.4) %>%
+  hideGroup(c('Place names')) %>%
+  addCircleMarkers(data=catConFull%>%filter(YEAR==RR_year)%>%group_by(sector,RUN_RECON_AREA, lat,long,label)%>%
+                     summarize(Kept=sum(Kept,na.rm=T))%>%filter(Kept>0 & !is.na(RUN_RECON_AREA)),
+    radius=~ifelse(Kept<500, 4, ifelse(Kept>=500&Kept<1000, 7, ifelse(Kept>=1000&Kept<1500, 10, 14))), 
+    color=~pal(sector), stroke=F,  fillOpacity=0.8, label=~htmlEscape(label)) %>%
+  # rec biosample markers ---
+  addCircleMarkers(data=bioConFullt%>%filter(!is.na(lat) & YEAR==RR_year-2)%>%
+                     group_by(YEAR,sector,RUN_RECON_AREA,CREEL_SUB_AREA,lat,long)%>%summarize(n=n(),label=unique(label)),
+    radius=~ifelse(n<10, 3, ifelse(n>=10&n<50, 6, ifelse(n>=50&n<75, 8, ifelse(n>=75&n<100, 10, 12)))),
+    color="green", stroke=T, fillOpacity=0, label=~htmlEscape(label)) 
+```
+
+### `r RR_year` catch + `r RR_year-3` biodata
+
+Catch here is from `r RR_year` and overlaid with `r RR_year-3` biosamples. 
+
+```{r}
+leaflet() %>% 
+  #addProviderTiles(providers$Stamen.TerrainBackground) %>%
+  addProviderTiles(providers$CartoDB.VoyagerNoLabels) %>%
+  #addProviderTiles(providers$OpenStreetMap.HOT) %>%
+  #addProviderTiles(providers$Esri.OceanBasemap) %>%
+  #addProviderTiles(providers$Esri.WorldImagery) %>%
+  addWMSTiles(
+    "https://gis.ngdc.noaa.gov/arcgis/services/graticule/MapServer/WMSServer/",
+    layers = c("1-degree grid", "5-degree grid"),
+    options = WMSTileOptions(format = "image/png8", transparent = TRUE),
+    attribution = NULL,group = 'Graticules') %>%
+  
+  setView(lng = -126.57, lat =  49.70, zoom = 9.4) %>%
+  hideGroup(c('Place names')) %>%
+  addCircleMarkers(data=catConFull%>%filter(YEAR==RR_year)%>%group_by(sector,RUN_RECON_AREA, lat,long,label)%>%
+                     summarize(Kept=sum(Kept,na.rm=T))%>%filter(Kept>0 & !is.na(RUN_RECON_AREA)),
+    radius=~ifelse(Kept<500, 4, ifelse(Kept>=500&Kept<1000, 7, ifelse(Kept>=1000&Kept<1500, 10, 14))), 
+    color=~pal(sector), stroke=F,  fillOpacity=0.8, label=~htmlEscape(label)) %>%
+  # rec biosample markers ---
+  addCircleMarkers(data=bioConFullt%>%filter(!is.na(lat) & YEAR==RR_year-3)%>%
+                     group_by(YEAR,sector,RUN_RECON_AREA,CREEL_SUB_AREA,lat,long)%>%summarize(n=n(),label=unique(label)),
+    radius=~ifelse(n<10, 3, ifelse(n>=10&n<50, 6, ifelse(n>=50&n<75, 8, ifelse(n>=75&n<100, 10, 12)))),
+    color="green", stroke=T, fillOpacity=0, label=~htmlEscape(label)) 
+```
+
+<br>
+
+<br> 
+
+## **Temporal data**
+
+Temporal distribution of catch 
+
+```{r}
+catConFull$MONTH <- factor(catConFull$MONTH, levels=c("June","July","August","September","October", ordered=T))
+```
+
+```{r time-distn, fig.cap='Temporal distribution of catch by sector (blue/red/yellow) and accompanying biological samples (green). Green points indicate >10 samples from a RRA-year; black X indicates <10 samples; no mark accompanying catch indicates no biological samples from that RRA-year.', out.width="90%"}
+ggplot() +
+  geom_point(data=catConFull%>%
+               filter(!is.na(RUN_RECON_AREA) & YEAR==RR_year & Kept>0)%>%
+               group_by(YEAR, sector, RUN_RECON_AREA, MONTH) %>% 
+               summarize(Kept=sum(Kept)),
+             aes(x=MONTH, y=RUN_RECON_AREA, fill=sector, colour=sector, size=Kept), shape=21, alpha=0.7) +
+    geom_point(data=bioConFullt%>%
+                 filter(!is.na(RUN_RECON_AREA))%>%
+                 group_by(YEAR, sector, RUN_RECON_AREA, MONTH) %>% 
+                 summarize(n=n()) %>%
+                 filter(n>10),
+               aes(x=MONTH, y=RUN_RECON_AREA), shape=16, size=1.5, colour="forest green", stroke=2, alpha=0.7) +
+    geom_point(data=bioConFullt%>%
+                 filter(!is.na(RUN_RECON_AREA)) %>%
+                 group_by(YEAR, sector, RUN_RECON_AREA, MONTH) %>% 
+                 summarize(n=n()) %>%
+                 filter(n<10), 
+               aes(x=MONTH, y=RUN_RECON_AREA), shape=4, colour="black", size=3, stroke=1, alpha=0.7) +
+  scale_fill_manual(breaks=waiver(),values = c("navy","red","orange"))+
+  scale_colour_manual(breaks=waiver(),values = c("navy","red","orange")) +
+  scale_size_continuous(breaks = waiver(), range=c(3,7)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle=45, hjust=1)) +
+  facet_wrap(~YEAR, nrow=1)
+```
+
+
+<br>
+
+<br>
+
+<br>
+
+# Lookup tables
+
+Based on above, the analyst now has to decide which fishery/run reconstruction area (RRA) to match with which biosamples 
+
+```{r echo=T}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
