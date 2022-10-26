@@ -1,0 +1,347 @@
+
+---
+title: "**Nitinat terminal run reconstruction**"
+date: 'Last update: `r Sys.Date()`'
+output: 
+  bookdown::html_document2:
+    toc: true
+    toc_float: true
+    toc_collapsed: false 
+    toc_depth: 5
+    number_sections: true
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=F, message=F, warning=F)
+
+
+# load packages -------------------
+library(tidyverse)
+library(leaflet)        # for leaflet()
+library(readxl)         # for read_excel()
+library(here)           # for here()
+library(htmltools)      # for htmlEscape()
+library(kableExtra)     # for kable()
+library(bookdown) 
+
+
+# set source location to work from -------------------
+setwd(here("chinook"))
+source("nitinat_ck_termRR.R", local = knitr::knit_global())
+
+
+# misc parameters, functions, variables, etc. -------------------
+RR_year <- 2022
+pal <- colorFactor(c("navy", "red", "orange"), domain = unique(spatLookup$sector))    # for leaflet() 
+my_icons <- awesomeIcons(icon = "home",
+                         markerColor = "green",
+                         library = "glyphicon")
+```
+
+<br>
+
+<br>
+
+# **Introduction**
+*This can be amended - taken from original Excel file *
+
+The objectives are to: 
+
+1. Estimate **terminal returns** to the area **by age**. The age breakdown is essential for Chinook forecasting and modelling
+2. Estimate the **hatchery contribution** to the terminal runs
+3. Estimate the potential **egg deposition**. For Chinook, we are defining escapement targets by eggs due to the variable age-at-return and variable contribution of females to spawner totals.
+4. Estimate terminal **harvest rates**
+
+<br>
+
+Data sources include:
+
+* Catch data:
+    + Sport age data: from 'BIOCNxxx.xlsx' files. Ages pooled over sub-areas and weighted by stat week sample size. 
+    + Sport termal mark data: from '2013 - X:\WCVI\THERMAL_MARK_PROJECT\Data\Biodata\Sport\Area_25_2009to2013Chinook_Bio_Recreational_Crest_oto_age.xlsx' files.
+* Escapement data:
+    + Query escapement and broodstock estimates from New Escapement Index.xls or from Escapement Coordinator's PDF summaries.
+    + Query escapement age data from NuSEDs; cross check with WCVI files for additional data not entered into NuSEDs; sample N is usually higher than for otolith-linked biodata; ages are uncorrected for sex stratified sampling; for RunRecon years, these data were used to calculate age, rather than pulling from PADs directly
+    + If otolith data are available and linked to biodata, summarize to determine % marked by age; summarize further to determine % marked by age and sex.
+    + Correct escapement sample age data for sex-stratified sampling: 
+        + Determine sex at age proportions from biodata
+        + Use first set sex ratio data from hatchery staff (Conuma) to calculate correction factors
+        + Note: do not correct broodstock age ratio as the hatchery uses 3:3 males:females when spawning (more similar to the sex stratified sample)
+
+<br>
+
+<br> 
+
+
+
+
+
+
+# **Study area**
+
+![Nitinat terminal run reconstruction study area](C:/Users/DAVIDSONKA/Documents/Notes, records, resources/Area maps/statarea21_maponly.pdf "Nitinat terminal run reconstruction study area"){width=100% height=700}
+```{r studyarea-fig, fig.cap='Nitinat run reconstruction study area.'}
+knitr::include_graphics(here::here("data", "statarea21_maponly.png"))
+knitr::include_graphics(here::here("data", "statarea22_maponly.png"))
+```
+
+
+<br>
+
+<br>
+
+
+
+# **Data exploration** 
+
+## **Spatial data** {.tabset .tabset-fade}
+
+Spatial distribution of chinook catch in commerical (red), EO (navy), and sport (gold) fisheries scaled by size bins (<500, 500-999, 1000-1499, and >1500. Catch data are overlaid by available biosample data (green rings), with size scaled based on available sample size 
+
+### `r RR_year` catch + biodata
+
+Catch here is from `r RR_year` and overlaid with `r RR_year` biosamples. 
+
+```{r cat-samp-fig1, fig.cap='Catch in commerical (red), EO (navy), and sport (gold) fisheries. Point size scaled by number of Chinook retained in each fishery. Available biosample data are overlaid in green rings, with size scaled based on available sample size. Note that scale betwen biosamples and catch is not equal.'}
+leaflet() %>% 
+  #addProviderTiles(providers$Stamen.TerrainBackground) %>%
+  addProviderTiles(providers$CartoDB.VoyagerNoLabels) %>%
+  #addProviderTiles(providers$OpenStreetMap.HOT) %>%
+  #addProviderTiles(providers$Esri.OceanBasemap) %>%
+  #addProviderTiles(providers$Esri.WorldImagery) %>%
+  addWMSTiles(
+    "https://gis.ngdc.noaa.gov/arcgis/services/graticule/MapServer/WMSServer/",
+    layers = c("1-degree grid", "5-degree grid"),
+    options = WMSTileOptions(format = "image/png8", transparent = TRUE),
+    attribution = NULL,group = 'Graticules') %>%
+  setView(lng = -126.57, lat =  49.70, zoom = 9.4) %>%
+  hideGroup(c('Place names')) %>%
+  # catch markers ---
+  addCircleMarkers(data=catConFull%>%filter(YEAR==RR_year)%>%group_by(sector,RUN_RECON_AREA, lat,long,label)%>%
+                     summarize(Kept=sum(Kept,na.rm=T))%>%filter(Kept>0 & !is.na(RUN_RECON_AREA)),
+    radius=~ifelse(Kept<500, 4, ifelse(Kept>=500&Kept<1000, 7, ifelse(Kept>=1000&Kept<1500, 10, 14))), 
+    color=~pal(sector), stroke=F,  fillOpacity=0.8, label=~htmlEscape(label)) %>%
+  # rec biosample markers ---
+  addCircleMarkers(data=bioConFull%>%filter(!is.na(lat) & YEAR==RR_year)%>%
+                     group_by(YEAR,sector,RUN_RECON_AREA,CREEL_SUB_AREA,lat,long)%>%summarize(n=n(),label=unique(label)),
+    radius=~ifelse(n<10, 3, ifelse(n>=10&n<50, 6, ifelse(n>=50&n<75, 8, ifelse(n>=75&n<100, 10, 12)))),
+    color="green", stroke=T, fillOpacity=0, label=~htmlEscape(label)) 
+```
+
+<br>
+
+<br>
+
+### `r RR_year` catch + `r RR_year-1` biodata
+
+Catch here is from `r RR_year` and overlaid with `r RR_year-1` biosamples. 
+
+```{r cat-samp-fig2, fig.cap='Catch in commerical (red), EO (navy), and sport (gold) fisheries. Point size scaled by number of Chinook retained in each fishery. Available biosample data are overlaid in green rings, with size scaled based on available sample size. Note that scale betwen biosamples and catch is not equal.'}
+leaflet() %>% 
+  #addProviderTiles(providers$Stamen.TerrainBackground) %>%
+  addProviderTiles(providers$CartoDB.VoyagerNoLabels) %>%
+  #addProviderTiles(providers$OpenStreetMap.HOT) %>%
+  #addProviderTiles(providers$Esri.OceanBasemap) %>%
+  #addProviderTiles(providers$Esri.WorldImagery) %>%
+  addWMSTiles(
+    "https://gis.ngdc.noaa.gov/arcgis/services/graticule/MapServer/WMSServer/",
+    layers = c("1-degree grid", "5-degree grid"),
+    options = WMSTileOptions(format = "image/png8", transparent = TRUE),
+    attribution = NULL,group = 'Graticules') %>%
+  
+  setView(lng = -126.57, lat =  49.70, zoom = 9.4) %>%
+  hideGroup(c('Place names')) %>%
+  addCircleMarkers(data=catConFull%>%filter(YEAR==RR_year)%>%group_by(sector,RUN_RECON_AREA, lat,long,label)%>%
+                     summarize(Kept=sum(Kept,na.rm=T))%>%filter(Kept>0 & !is.na(RUN_RECON_AREA)),
+    radius=~ifelse(Kept<500, 4, ifelse(Kept>=500&Kept<1000, 7, ifelse(Kept>=1000&Kept<1500, 10, 14))), 
+    color=~pal(sector), stroke=F,  fillOpacity=0.8, label=~htmlEscape(label)) %>%
+  # rec biosample markers ---
+  addCircleMarkers(data=bioConFull%>%filter(!is.na(lat) & YEAR==RR_year-1)%>%
+                     group_by(YEAR,sector,RUN_RECON_AREA,CREEL_SUB_AREA,lat,long)%>%summarize(n=n(),label=unique(label)),
+    radius=~ifelse(n<10, 3, ifelse(n>=10&n<50, 6, ifelse(n>=50&n<75, 8, ifelse(n>=75&n<100, 10, 12)))),
+    color="green", stroke=T, fillOpacity=0, label=~htmlEscape(label)) 
+```
+
+<br>
+
+<br>
+
+### `r RR_year` catch + `r RR_year-2` biodata
+
+Catch here is from `r RR_year` and overlaid with `r RR_year-2` biosamples. 
+
+```{r cat-samp-fig3, fig.cap='Catch in commerical (red), EO (navy), and sport (gold) fisheries. Point size scaled by number of Chinook retained in each fishery. Available biosample data are overlaid in green rings, with size scaled based on available sample size. Note that scale betwen biosamples and catch is not equal.'}
+leaflet() %>% 
+  #addProviderTiles(providers$Stamen.TerrainBackground) %>%
+  addProviderTiles(providers$CartoDB.VoyagerNoLabels) %>%
+  #addProviderTiles(providers$OpenStreetMap.HOT) %>%
+  #addProviderTiles(providers$Esri.OceanBasemap) %>%
+  #addProviderTiles(providers$Esri.WorldImagery) %>%
+  addWMSTiles(
+    "https://gis.ngdc.noaa.gov/arcgis/services/graticule/MapServer/WMSServer/",
+    layers = c("1-degree grid", "5-degree grid"),
+    options = WMSTileOptions(format = "image/png8", transparent = TRUE),
+    attribution = NULL,group = 'Graticules') %>%
+  
+  setView(lng = -126.57, lat =  49.70, zoom = 9.4) %>%
+  hideGroup(c('Place names')) %>%
+  addCircleMarkers(data=catConFull%>%filter(YEAR==RR_year)%>%group_by(sector,RUN_RECON_AREA, lat,long,label)%>%
+                     summarize(Kept=sum(Kept,na.rm=T))%>%filter(Kept>0 & !is.na(RUN_RECON_AREA)),
+    radius=~ifelse(Kept<500, 4, ifelse(Kept>=500&Kept<1000, 7, ifelse(Kept>=1000&Kept<1500, 10, 14))), 
+    color=~pal(sector), stroke=F,  fillOpacity=0.8, label=~htmlEscape(label)) %>%
+  # rec biosample markers ---
+  addCircleMarkers(data=bioConFull%>%filter(!is.na(lat) & YEAR==RR_year-2)%>%
+                     group_by(YEAR,sector,RUN_RECON_AREA,CREEL_SUB_AREA,lat,long)%>%summarize(n=n(),label=unique(label)),
+    radius=~ifelse(n<10, 3, ifelse(n>=10&n<50, 6, ifelse(n>=50&n<75, 8, ifelse(n>=75&n<100, 10, 12)))),
+    color="green", stroke=T, fillOpacity=0, label=~htmlEscape(label)) 
+```
+
+<br>
+
+<br>
+
+### `r RR_year` catch + `r RR_year-3` biodata
+
+Catch here is from `r RR_year` and overlaid with `r RR_year-3` biosamples. 
+
+```{r cat-samp-fig4, fig.cap='Catch in commerical (red), EO (navy), and sport (gold) fisheries. Point size scaled by number of Chinook retained in each fishery. Available biosample data are overlaid in green rings, with size scaled based on available sample size. Note that scale betwen biosamples and catch is not equal.'}
+leaflet() %>% 
+  #addProviderTiles(providers$Stamen.TerrainBackground) %>%
+  addProviderTiles(providers$CartoDB.VoyagerNoLabels) %>%
+  #addProviderTiles(providers$OpenStreetMap.HOT) %>%
+  #addProviderTiles(providers$Esri.OceanBasemap) %>%
+  #addProviderTiles(providers$Esri.WorldImagery) %>%
+  addWMSTiles(
+    "https://gis.ngdc.noaa.gov/arcgis/services/graticule/MapServer/WMSServer/",
+    layers = c("1-degree grid", "5-degree grid"),
+    options = WMSTileOptions(format = "image/png8", transparent = TRUE),
+    attribution = NULL,group = 'Graticules') %>%
+  
+  setView(lng = -126.57, lat =  49.70, zoom = 9.4) %>%
+  hideGroup(c('Place names')) %>%
+  addCircleMarkers(data=catConFull%>%filter(YEAR==RR_year)%>%group_by(sector,RUN_RECON_AREA, lat,long,label)%>%
+                     summarize(Kept=sum(Kept,na.rm=T))%>%filter(Kept>0 & !is.na(RUN_RECON_AREA)),
+    radius=~ifelse(Kept<500, 4, ifelse(Kept>=500&Kept<1000, 7, ifelse(Kept>=1000&Kept<1500, 10, 14))), 
+    color=~pal(sector), stroke=F,  fillOpacity=0.8, label=~htmlEscape(label)) %>%
+  # rec biosample markers ---
+  addCircleMarkers(data=bioConFull%>%filter(!is.na(lat) & YEAR==RR_year-3)%>%
+                     group_by(YEAR,sector,RUN_RECON_AREA,CREEL_SUB_AREA,lat,long)%>%summarize(n=n(),label=unique(label)),
+    radius=~ifelse(n<10, 3, ifelse(n>=10&n<50, 6, ifelse(n>=50&n<75, 8, ifelse(n>=75&n<100, 10, 12)))),
+    color="green", stroke=T, fillOpacity=0, label=~htmlEscape(label)) 
+```
+
+<br>
+
+<br> 
+
+## **Temporal data**
+
+Temporal distribution of catch 
+
+```{r}
+catConFull$MONTH <- factor(catConFull$MONTH, levels=c("June","July","August","September","October", ordered=T))
+```
+
+```{r time-distn, fig.cap='Temporal distribution of catch by sector (blue/red/yellow) and accompanying biological samples (green). Green points indicate >10 samples from a RRA-year; black X indicates <10 samples; no mark accompanying catch indicates no biological samples from that RRA-year.', out.width="90%"}
+ggplot() +
+  geom_point(data=catConFull%>%
+               filter(!is.na(RUN_RECON_AREA) & YEAR==RR_year & Kept>0)%>%
+               group_by(YEAR, sector, RUN_RECON_AREA, MONTH) %>% 
+               summarize(Kept=sum(Kept)),
+             aes(x=MONTH, y=RUN_RECON_AREA, fill=sector, colour=sector, size=Kept), shape=21, alpha=0.7) +
+    geom_point(data=bioConFull%>%
+                 filter(!is.na(RUN_RECON_AREA))%>%
+                 group_by(YEAR, sector, RUN_RECON_AREA, MONTH) %>% 
+                 summarize(n=n()) %>%
+                 filter(n>10),
+               aes(x=MONTH, y=RUN_RECON_AREA), shape=16, size=1.5, colour="forest green", stroke=2, alpha=0.7) +
+    geom_point(data=bioConFull%>%
+                 filter(!is.na(RUN_RECON_AREA)) %>%
+                 group_by(YEAR, sector, RUN_RECON_AREA, MONTH) %>% 
+                 summarize(n=n()) %>%
+                 filter(n<10), 
+               aes(x=MONTH, y=RUN_RECON_AREA), shape=4, colour="black", size=3, stroke=1, alpha=0.7) +
+  scale_fill_manual(breaks=waiver(),values = c("navy","red","orange"))+
+  scale_colour_manual(breaks=waiver(),values = c("navy","red","orange")) +
+  scale_size_continuous(breaks = waiver(), range=c(3,7)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle=45, hjust=1)) +
+  facet_wrap(~YEAR, nrow=1)
+```
+
+<br>
+
+Ultimately each of these points indicate a unique fishery that occurs in time (month-year) and space (Run Reconstruction Area). As you can see, we have created a unique fishery ID (UFID) that captures each finescale fishery in time (year and month), space, and sector. This is what will be used to join catch data to biosamples (age, stock comp).  
+The unique fishery IDs (UFIDs) for `r RR_year` (based on fisheries that caught Chinook) are:
+
+```{r UFID-tab}
+  catConFull %>% 
+    filter(!is.na(RUN_RECON_AREA) & YEAR==RR_year) %>% 
+    group_by(sector,RUN_RECON_AREA, UFID) %>% 
+    summarize(totalKept = sum(Kept,na.rm=T))%>%
+    filter(totalKept>0) %>%
+  kbl(align="c", caption="Unique fisheries (and total number of Chinook caught) for this year's run reconstruction.") %>%
+  kable_paper("hover", full_width=T, position = "center") %>%
+  collapse_rows(columns=c(1,2), valign="middle") 
+```
+
+<br>
+
+<br>
+
+<br>
+
+# **Orphan UFIDs and lookup tables**
+
+Based on above, we can probably already figure out which fisheries are going to need to borrow biosamples. The table below highlights fisheries with <10 age and/or stock composition samples available. 
+
+```{r orphUFIDs-tab}
+conOrphanUFIDs %>%
+  mutate_if(is.numeric, ~replace_na(., 0)) %>%
+  rename(`CK caught in 2021` = totalKept,
+         `# Resolved age samples` = n_age_samples,
+         `# Resolved stock comp samples` = n_stockcomp_samples,
+         `Flag for # age samples (<10)` = AGE_SAMPLESIZE_FLAG,
+         `Flag for # stock comp samples (<10)` = STOCKCOMP_SAMPLESIZE_FLAG,
+         `Run reconstruction area` = RUN_RECON_AREA,
+         Sector = sector) %>%
+  kbl(align="c", caption="Fisheries without same-year age and/or stock composition samples.") %>%
+  kable_paper("hover", full_width=T, position = "center") %>%
+  collapse_rows(columns=c(1,2), valign="middle") 
+```
+
+<br>
+
+BUT! Sometimes things don't join up. Lets examine our biosample data frame in case we missed samples. This time we will do the lookup at a coarser level - Run reconstruction area, rather than UFID (but still looking for `r RR_year` samples right now). But we will only select fisheries that returned no samples (we know some fisheries have small sample sizes - we are looking for missed opportunities).  
+
+```{r}
+bioConFull %>% 
+  filter(YEAR==RR_year & 
+         RUN_RECON_AREA %in% conOrphanUFIDs[is.na(conOrphanUFIDs$n_age_samples)|is.na(conOrphanUFIDs$n_stockcomp_samples),]$RUN_RECON_AREA) %>% 
+  group_by(RUN_RECON_AREA, UFID) %>% 
+  summarize(n=n()) %>%
+  kbl(align="c", caption="Fisheries that may have biosamples that (for whatever reason) weren't found in the above table.") %>%
+  kable_paper("hover", full_width=T, position = "center") #%>%
+  #collapse_rows(columns=c(1,2), valign="middle") 
+```
+
+<br>
+
+Assuming we haven't missed any samples (the table above should be empty), now we have to decide how to borrow samples appropriately. 
+
+<br>
+
+## **Borrowing biological samples for orphan UFIDs**
+
+
+
+
+
+
+
+
+
+
+
+
