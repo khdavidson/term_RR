@@ -2,10 +2,10 @@
 ####### BEFORE STARTING IN R: ####### 
 
 ####### Extract files from databases -------------------
-# 1. CREST biodata: 'WCVI Chinook Run Reconstruction Project Biological Data With FOS' Report > most recent 4 years, all months, Nootka Sound/Nootka Sound > Save to Excel as 'CREST_Export_WCVI_Chinook_Run_Reconstruction_Project_Biological_Data_with_FOS_Nootka[years-years].xlsx'
+# 1. CREST biodata: 'WCVI Chinook Run Reconstruction Project Biological Data With FOS' Report > most recent 4 years, all months, Nootka Sound/Nootka Sound > Save to Excel as 'CREST_Export_WCVI_Chinook_Run_Reconstruction_Project_Biological_Data_with_FOS_Nootka[yyyy-yyyy].xlsx'
 # 2. CREST catch: Salmon$ > FMCR_Fishery_Monitoring_Catch_Reporting > Recreational_CM > Catch_Data > save 'SC Sport Catch Creel Sub-area Disposition (Master Do No Edit).xlsx' as 'SC Sport Catch Creel Sub-area Disposition.xlsx'  
 # 3. FOS: ... 
-# 4. Oto Manager: Recovery Specimens > most recent 4 years, chinook, PFMA 25, include age > Generate > Save to Excel as 'OTOMGR_Export_RecoverySpecimens_PFMA25[years-years].xlsx'
+# 4. Oto Manager: Recovery Specimens > most recent 4 years, chinook, PFMA 25, include age > Generate > Save to Excel as 'OTOMGR_Export_RecoverySpecimens_PFMA25[yyyy-yyyy].xlsx'
 ####### Gather auxiliary files (these are individual Excel files not extracted from databases) -------------------
 # 0. Spatial lookup table ('spatialLookup.xlsx' from github repo - should already clone in with the project)
 # 1. EO data from RM (may now be in FOS, tbd)
@@ -20,6 +20,12 @@
 ######################################################################################################################################################
 
 
+# *** next: change TotalMort/Kept column to be called "TOTAL" like in the Nitinat TRR so it can join with escapement eventually
+
+
+
+
+
 # CONUMA Chinook terminal run reconstruction background script to accompany Rmd 
 # June 2022
 
@@ -32,14 +38,14 @@ library(leaflet)
 
 
 # set wd and settings -------------------
-setwd(here("data"))
+#setwd(here("data"))
 options(scipen = 999999)
 
 
 # Other inputs not from fish data -------------------
 RR_year <- 2021
 RR_ages <- data.frame(RESOLVED_AGE=c(2:6))
-spatLookup <- read_excel("spatialLookup.xlsx",sheet="Sheet1")
+spatLookup <- read_excel(here("data", "gitData", "spatialLookup.xlsx"), sheet="conuma")
 
 
 # Define function to covert date to stat week for commercial data -------------------
@@ -59,7 +65,7 @@ statWeek <- function(date_variable){
 # =================== DATABASE EXTRACTS ===================   [this may eventually be replaced with direct database connections]
 
 # CREST: Rec catch -------------------
-catRec <- read_excel("SC Sport Catch Creel Sub-area Disposition.xlsx", sheet="YTD") %>%
+catRec <- read_excel(here("data", "SC Sport Catch Creel Sub-area Disposition.xlsx"), sheet="YTD") %>%
   mutate(sector="sport",
          input_data_type="catch",
          MONTH = factor(MONTH, levels=month.name),
@@ -95,9 +101,12 @@ catRec <- read_excel("SC Sport Catch Creel Sub-area Disposition.xlsx", sheet="YT
   print()
 
 # CREST: Biodata ------------------- 
-bioCREST <- read_excel("CREST_Export_WCVI_Chinook_Run_Reconstruction_Project_Biological_Data_with_FOS_Nootka2018-2021.xlsx", sheet="WCVI_Chinook_Run_Rec") %>% 
+bioCREST <- read_excel(here("data", "conuma_data", "CREST_Export_WCVI_Chinook_Run_Reconstruction_Project_Biological_Data_with_FOS_Nootka2018-2022.xlsx"), 
+                       sheet="WCVI_Chinook_Run_Rec") %>% 
   select(-c(RECEIVED_SCALES:FISH_NO, REFERENCE_NO, SAMPLER_NAME:SAMPLER_ID,GUIDED,SPECIES, OTOLITH_BOX:OTOLITH_SPECIMEN,THERMALMARK,OTO_STOCK,SCALE_BOOK,SCALE_NO,SCALE_FORMAT:PART_AGE_CODE,CWT_HEAD_LABEL,DNA_CONTAINER_TYPE,SPECIMEN_REFERENCE_DNA_NO,DNA_STOCK_3:COMMENTS)) %>%
-  mutate(input_data_type="biodata",
+  mutate(input_data_type = case_when(!is.na(RESOLVED_AGE) & is.na(RESOLVED_STOCK_ORIGIN) ~ "age",
+                                     is.na(RESOLVED_AGE) & !is.na(RESOLVED_STOCK_ORIGIN) ~ "stock comp",
+                                     !is.na(RESOLVED_AGE) & !is.na(RESOLVED_STOCK_ORIGIN) ~ "age and stock comp"),
          gear = case_when(grepl("TROLL", SAMPLE_TYPE) ~ "Troll",
                           grepl("SEINE", SAMPLE_TYPE) ~ "Seine",
                           grepl("GILL NET", SAMPLE_TYPE) ~ "Gillnet"),
@@ -130,7 +139,8 @@ bioCREST <- read_excel("CREST_Export_WCVI_Chinook_Run_Reconstruction_Project_Bio
 
 
 # FOS: Commercial catch -------------------
-catComm <- read_excel("FOS Dump for 2021 Fisheries (Feb 10, 2022).xlsx", sheet="fos_VANWILLP", n_max=Inf, guess_max=20000, skip=2) %>%
+catComm <- read_excel(here("data", "FOS Dump for 2021 Fisheries (Feb 10, 2022).xlsx"), sheet="fos_VANWILLP", 
+                           n_max=Inf, guess_max=20000, skip=2) %>%
   mutate(input_data_type="catch",
          sector="commercial",
          YEAR = lubridate::year(FISHING_DATE),
@@ -146,10 +156,10 @@ catComm <- read_excel("FOS Dump for 2021 Fisheries (Feb 10, 2022).xlsx", sheet="
 
 
 # OTOMANAGER: Thermal mark -------------------     [not run]
-bioTM <- read_excel("2020 Thermal Mark Samples Status_26Feb2021.xlsx", sheet="2019_Specimen_Hatch_Age",skip=2, guess_max=20000) %>%
-  filter(SPECIES=="Chinook") %>%
-  mutate(input_data_type="stock composition") %>% 
-  print()
+#bioTM <- read_excel("2020 Thermal Mark Samples Status_26Feb2021.xlsx", sheet="2019_Specimen_Hatch_Age",skip=2, guess_max=20000) %>%
+#  filter(SPECIES=="Chinook") %>%
+#  mutate(input_data_type="stock composition") %>% 
+#  print()
 
 
 
@@ -158,20 +168,20 @@ bioTM <- read_excel("2020 Thermal Mark Samples Status_26Feb2021.xlsx", sheet="20
 
 # EO (5 Nations) CATCH -------------------
 catEO <- rbind(
-  read_excel("Five Nations 2021 Catch by PFMA by Month_nearshore.xlsx", sheet="Sheet1", range="I2:J3") %>%
+  read_excel(here("data", "conuma_data", "Five Nations 2021 Catch by PFMA by Month_nearshore.xlsx"), sheet="Sheet1", range="I2:J3") %>%
     pivot_longer(`Five Nations ISBM Muchalaht  Chinook sold -`, names_to="catch_data_source", values_to = "month") %>%
     pivot_longer(`PFMA 25`, names_to="PFMA", values_to = "Kept"),
   
-  read_excel("Five Nations 2021 Catch by PFMA by Month_nearshore.xlsx", sheet="Sheet1", range="A2:D10") %>%
+  read_excel(here("data", "conuma_data", "Five Nations 2021 Catch by PFMA by Month_nearshore.xlsx"), sheet="Sheet1", range="A2:D10") %>%
     pivot_longer(`Five Nations AABM Chinook sold 2021`, names_to="catch_data_source", values_to = "month") %>%
     pivot_longer(`PFMA 24`:`PFMA 26`, names_to="PFMA", values_to = "Kept") %>%
     filter(PFMA=="PFMA 25"),
   
-  read_excel("Five Nations 2021 Catch by PFMA by Month_nearshore.xlsx", sheet="Sheet1", range="F2:G5") %>%
+  read_excel(here("data", "conuma_data", "Five Nations 2021 Catch by PFMA by Month_nearshore.xlsx"), sheet="Sheet1", range="F2:G5") %>%
     pivot_longer(`Five Nations ISBM Conuma Chinook sold - Esperanza/Nootka`, names_to="catch_data_source", values_to = "month") %>%
     pivot_longer(`PFMA 25`, names_to="PFMA", values_to = "Kept"),
   
-  read_excel("Five Nations 2021 Catch by PFMA by Month_nearshore.xlsx", sheet="Sheet1", range="L2:M3") %>%
+  read_excel(here("data", "conuma_data", "Five Nations 2021 Catch by PFMA by Month_nearshore.xlsx"), sheet="Sheet1", range="L2:M3") %>%
     pivot_longer(`Five Nations Conuma ESSR`, names_to="catch_data_source", values_to = "month") %>%
     pivot_longer(`PFMA 25`, names_to="PFMA", values_to = "Kept")
 ) %>%
@@ -190,7 +200,7 @@ catEO <- rbind(
 
 # GSI -------------------  
 # full results:
-bioEO_GSI <- read_excel("PID20200133_Taaq_A25(20)_sc276_2021-03-23.xlsx", sheet="collection_table_ids") %>%
+bioEO_GSI <- read_excel(here("data", "conuma_data", "PID20200133_Taaq_A25(20)_sc276_2021-03-23.xlsx"), sheet="collection_table_ids") %>%
   mutate(input_data_type="stock comp",
          MONTH = case_when(grepl("Jun", collection) ~ "June",
                            grepl("Jul", collection) ~ "July",
@@ -217,7 +227,7 @@ bioEO_GSI <- read_excel("PID20200133_Taaq_A25(20)_sc276_2021-03-23.xlsx", sheet=
   print()
 
 # PBT age results:    [for later]
-bioEO_GSI_PBTage <- read_excel("PID20200133_Taaq_A25(20)_sc276_2021-03-23.xlsx", sheet="PBT_summary") %>% 
+bioEO_GSI_PBTage <- read_excel(here("data", "conuma_data", "PID20200133_Taaq_A25(20)_sc276_2021-03-23.xlsx"), sheet="PBT_summary") %>% 
   rename(RESOLVED_STOCK_ORIGIN = collection) %>%
   pivot_longer(`Taaq_A25(20)_07(Jul)`:`Taaq_A25(20)_08(Aug)`, names_to="collection", values_to="n") %>%
   filter(!is.na(n)) %>%
@@ -240,27 +250,27 @@ bioEO_GSI_PBTage <- bioEO_GSI_PBTage[rep(1:nrow(bioEO_GSI_PBTage), bioEO_GSI_PBT
 
 
 
-# SEP: Age and sex data -------------------   [not run]
-bioSEP <- read_excel("All_PADS_2021_CN_Ages_to_22Feb2022.xlsx", sheet="2021 Data", skip=1, guess_max=20000) %>%
-  filter(`Fiscal Year`==2021, Project=="CONUMA RIVER HATCHERY -2021", `Geographic Location`=="WCVI", 
-         `GR Age`%in%c("21","31","41","51","1M","2M","3M","4M")) %>%
-  mutate(`GR Age2` = case_when(`GR Age`%in%c("21","1M")~"2",
-                               `GR Age`%in%c("31","2M")~"3",
-                               `GR Age`%in%c("41","3M")~"4",
-                               `GR Age`%in%c("51","4M")~"5",
-                               `GR Age`%in%c("61","5M")~"6")) %>%
-  mutate_at("GR Age2", as.numeric) %>%
-  group_by(`Fiscal Year`,Location, `GR Age`, `GR Age2`) %>%
-  summarize(age_n=n(), Project=unique(Project)) %>%
-  group_by(`Fiscal Year`,Location) %>%
-  mutate(age_total=sum(age_n), age_propn = age_n/sum(age_n)) %>%
-  group_by(`Fiscal Year`,Location, `GR Age2`) %>%
-  summarize(age_n = sum(age_n), age_total=unique(age_total), age_propn = sum(age_propn), Project=unique(Project)) %>%
-  rename(Esc_location = Location) %>%
-  arrange(Esc_location, `GR Age2`) %>%
-  mutate(age_data_source = paste("SEP Conuma Hatchery broodstock age data", Esc_location, sep=", "),
-         data_class="age") %>%
-  print()
+# SEP: Age and sex data -------------------   [not run -- replace with NuSEDS direct query]
+#bioSEP <- read_excel("All_PADS_2021_CN_Ages_to_22Feb2022.xlsx", sheet="2021 Data", skip=1, guess_max=20000) %>%
+#  filter(`Fiscal Year`==2021, Project=="CONUMA RIVER HATCHERY -2021", `Geographic Location`=="WCVI", 
+#         `GR Age`%in%c("21","31","41","51","1M","2M","3M","4M")) %>%
+#  mutate(`GR Age2` = case_when(`GR Age`%in%c("21","1M")~"2",
+#                               `GR Age`%in%c("31","2M")~"3",
+#                               `GR Age`%in%c("41","3M")~"4",
+#                               `GR Age`%in%c("51","4M")~"5",
+#                               `GR Age`%in%c("61","5M")~"6")) %>%
+#  mutate_at("GR Age2", as.numeric) %>%
+#  group_by(`Fiscal Year`,Location, `GR Age`, `GR Age2`) %>%
+#  summarize(age_n=n(), Project=unique(Project)) %>%
+#  group_by(`Fiscal Year`,Location) %>%
+#  mutate(age_total=sum(age_n), age_propn = age_n/sum(age_n)) %>%
+#  group_by(`Fiscal Year`,Location, `GR Age2`) %>%
+#  summarize(age_n = sum(age_n), age_total=unique(age_total), age_propn = sum(age_propn), Project=unique(Project)) %>%
+#  rename(Esc_location = Location) %>%
+#  arrange(Esc_location, `GR Age2`) %>%
+#  mutate(age_data_source = paste("SEP Conuma Hatchery broodstock age data", Esc_location, sep=", "),
+#         data_class="age") %>%
+#  print()
 
 
 # [Conuma Hatchery & River Escapement] -------------------  [not run]
@@ -352,7 +362,7 @@ bioCREST %>%
 
 # rename to bioConFull once comm/ eo/ fsc are in
 
-bioConFullt <- 
+bioConFull <- 
   # JOIN sport data ---- 
   full_join(
     # within sport data, combine bio data to the spatial lookup file to georeference --  
@@ -415,7 +425,7 @@ bioConFullt <-
 
 # STOP HERE AND CONSULT RMD OUTPUT!
 
-# > where are your fisheries and escapement occuring? 
+# > where are your fisheries and escapement occurring? 
 # > do they have complementary biodata?
 # > if not, are there nearby sectors with same-year data that can be borrowed from that are both temporally and spatially appropriate?
 # > if not, are there data from a previous year that can be used? or a long-term average?
@@ -428,88 +438,58 @@ bioConFullt <-
 
 
 
-# Create lookup table ---------------
-conLookUp <- dataframe(
-  RUN_RECON_AREA = c("sport Tlupana",
-                     "sport Outer Nootka/corridor",
-                     "sport Outer Esperanza/corridor",
-                     "sport Muchalat",
-                     "sport Inner Nootka",
-                     "sport Inner Esperanza",
-                     "escapement Misc Tahsis R",
-                     "escapement Misc Leiner R",
-                     "escapement Misc Gold R",
-                     "escapement Misc Burman R",
-                     "escapement Conuma R",
-                     "commercial Gillnet Tlupana",
-                     "commercial Gillnet Esperanza",
-                     "commercial Seine",
-                     "commercial Troll",
-                     "5 Nations Outer Nootka",
-                     "5 Nations Muchalat",
-                     "5 Nations Conuma ESSR"),
+# Match fisheries with existing run reconstruction year biodata ---------------
+# Fisheries to match with data: 
+conUFIDSampSum21 <- left_join(
+  catConFull %>% 
+    filter(!is.na(RUN_RECON_AREA) & YEAR==RR_year) %>% 
+    group_by(sector,RUN_RECON_AREA, UFID) %>% 
+    summarize(totalKept = sum(Kept,na.rm=T))%>%
+    filter(totalKept>0),
   
-  catch_from = case_when("sport Tlupana" ~ "sport Tlupana",
-                         "sport Outer Nootka/corridor" ~ "sport Outer Nootka/corridor",
-                         "sport Outer Esperanza/corridor" ~ "sport Outer Esperanza/corridor",
-                         "sport Muchalat" ~ "sport Muchalat",
-                         "sport Inner Nootka" ~ "sport Inner Nootka",
-                         "sport Inner Esperanza" ~ "sport Inner Esperanza",
-                         "escapement Misc Tahsis R" ~ "escapement Misc Tahsis R",
-                         "escapement Misc Leiner R" ~ "escapement Misc Leiner R",
-                         "escapement Misc Gold R" ~ "escapement Misc Gold R",
-                         "escapement Misc Burman R" ~ "escapement Misc Burman R",
-                         "escapement Conuma R" ~ "escapement Conuma R",
-                         "commercial Gillnet Tlupana" ~ "commercial Gillnet Tlupana",
-                         "commercial Gillnet Esperanza" ~ "commercial Gillnet Esperanza",
-                         "commercial Seine" ~ "commercial Seine",
-                         "commercial Troll" ~ "commercial Troll",
-                         "5 Nations Outer Nootka" ~ "5 Nations Outer Nootka",
-                         "5 Nations Muchalat" ~ "5 Nations Muchalat",
-                         "5 Nations Conuma ESSR" ~ "5 Nations Conuma ESSR"),
+  bioConFull %>% 
+    filter(!is.na(RUN_RECON_AREA) & !is.na(RESOLVED_AGE)) %>%    #joining based on UFID which has year, so don't need to filter biosamples by year
+    group_by(sector,RUN_RECON_AREA, UFID) %>% 
+    summarize(n_age_samples=n())
+) %>%
+  left_join(.,
+            bioConFull %>% 
+              filter(!is.na(RUN_RECON_AREA) & !is.na(RESOLVED_STOCK_ORIGIN)) %>% 
+              group_by(RUN_RECON_AREA, UFID) %>% 
+              summarize(n_stockcomp_samples=n())
+            ) %>%
+  mutate(AGE_SAMPLESIZE_FLAG = ifelse(is.na(n_age_samples)|n_age_samples<10, "FLAG", NA),
+         STOCKCOMP_SAMPLESIZE_FLAG = ifelse(is.na(n_stockcomp_samples)|n_stockcomp_samples<10, "FLAG", NA)) %>%
+  print()
   
-  ages_from = case_when("sport Tlupana" ~ "sport Tlupana",                                                     # << MANUAL EDIT BELOW >> 
-                        "sport Outer Nootka/corridor" ~ "sport Outer Nootka/corridor",
-                        "sport Outer Esperanza/corridor" ~ "sport Outer Esperanza/corridor",
-                        "sport Muchalat" ~ "sport Muchalat",
-                        "sport Inner Nootka" ~ "sport Inner Nootka",
-                        "sport Inner Esperanza" ~ "sport Inner Esperanza",
-                        "escapement Misc Tahsis R" ~ "escapement Misc Tahsis R",
-                        "escapement Misc Leiner R" ~ "escapement Misc Leiner R",
-                        "escapement Misc Gold R" ~ "escapement Misc Gold R",
-                        "escapement Misc Burman R" ~ "escapement Misc Burman R",
-                        "escapement Conuma R" ~ "escapement Conuma R",
-                        "commercial Gillnet Tlupana" ~ "commercial Gillnet Tlupana",
-                        "commercial Gillnet Esperanza" ~ "commercial Gillnet Esperanza",
-                        "commercial Seine" ~ "commercial Seine",
-                        "commercial Troll" ~ "commercial Troll",
-                        "5 Nations Outer Nootka" ~ "5 Nations Outer Nootka",
-                        "5 Nations Muchalat" ~ "5 Nations Muchalat",
-                        "5 Nations Conuma ESSR" ~ "5 Nations Conuma ESSR"),                                   # << / end manual edit >> 
   
-  stock_comp_from = case_when("sport Tlupana" ~ "sport Tlupana",                                              # << MANUAL EDIT BELOW >> 
-                              "sport Outer Nootka/corridor" ~ "sport Outer Nootka/corridor",
-                              "sport Outer Esperanza/corridor" ~ "sport Outer Esperanza/corridor",
-                              "sport Muchalat" ~ "sport Muchalat",
-                              "sport Inner Nootka" ~ "sport Inner Nootka",
-                              "sport Inner Esperanza" ~ "sport Inner Esperanza",
-                              "escapement Misc Tahsis R" ~ "escapement Misc Tahsis R",
-                              "escapement Misc Leiner R" ~ "escapement Misc Leiner R",
-                              "escapement Misc Gold R" ~ "escapement Misc Gold R",
-                              "escapement Misc Burman R" ~ "escapement Misc Burman R",
-                              "escapement Conuma R" ~ "escapement Conuma R",
-                              "commercial Gillnet Tlupana" ~ "commercial Gillnet Tlupana",
-                              "commercial Gillnet Esperanza" ~ "commercial Gillnet Esperanza",
-                              "commercial Seine" ~ "commercial Seine",
-                              "commercial Troll" ~ "commercial Troll",
-                              "5 Nations Outer Nootka" ~ "5 Nations Outer Nootka",
-                              "5 Nations Muchalat" ~ "5 Nations Muchalat",
-                              "5 Nations Conuma ESSR" ~ "5 Nations Conuma ESSR"))                                  # << / end manual edit >> 
+  
+# Filter out fisheries without biodata to manually create lookup table ---------------
+# Fisheries to match with data: 
+conOrphanUFIDs <- conUFIDSampSum21 %>% 
+  filter(AGE_SAMPLESIZE_FLAG=="FLAG" | STOCKCOMP_SAMPLESIZE_FLAG=="FLAG") %>% 
+  print()
 
-
-
-
-
+View(bioConFull %>% 
+  filter(RUN_RECON_AREA %in% conOrphanUFIDs$RUN_RECON_AREA))
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
 
 
 

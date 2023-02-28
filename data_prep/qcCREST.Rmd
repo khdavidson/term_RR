@@ -1,0 +1,388 @@
+---
+title: "**qcCREST**"
+date: 'Last update: `r format(Sys.time(), sep="_", "%Y-%m-%d %H:%M")`'
+output: html_document
+knit: (function(inputFile, encoding) { 
+  rmarkdown::render(inputFile, encoding=encoding, output_file=paste0(substr(inputFile,1,nchar(inputFile)-4), format(Sys.time(), sep="_", "%Y-%m-%d_%H%M"), '.html')) 
+  }
+  )
+---
+
+
+
+```{r setup, include=FALSE, echo=F}
+knitr::opts_chunk$set(echo=T, warning=F, message=F)
+
+# Load packages ---------------------------
+library(dplyr)
+library(readxl)
+library(writexl)
+library(here)
+
+
+# Read source data ---------------------------
+crest_biodata <- read_excel(
+  path = 
+    # Combining the parent directory, sep, and gsub arguments
+    paste0(
+      # Creating parent directory:
+      paste0(
+        "C:/Users", 
+        sep="/", 
+        # Finds your computer username:
+        Sys.info()[6], 
+        sep="/",
+        # SCA StAD SharePoint website that is synced to your computer:
+        "DFO-MPO/PAC-SCA Stock Assessment (STAD) - Terminal CN Run Recon/Communal data"
+        ),
+      sep="/",
+      # Find the file in the directory that starts with "WCVI_Chinook_Run_Reconstruction_Project_Biological_Data_with_FOS" and append to parent directory
+      grep("WCVI_Chinook_Run_Reconstruction_Project_Biological_Data_with_FOS",
+           list.files(path = paste0("C:/Users", sep="/", Sys.info()[6], sep="/",
+                                    "DFO-MPO/PAC-SCA Stock Assessment (STAD) - Terminal CN Run Recon/Communal data" )),
+           value=T)
+      ),
+  sheet="WCVI_Chinook_Run_Rec", 
+  guess_max=20000
+)
+
+
+# Helper variables and functions ---------------------------
+RR_year <- 2022
+"%notin%" <- Negate("%in%")
+```
+
+<br>
+
+<br>
+
+Output of script for QCing CREST biodata for terminal run reconstructions. 
+
+Sister file: C:/Users/DAVIDSONKA/DFO-MPO/PAC-SCA Stock Assessment (STAD) - Terminal CN Run Recon/Communal data/qcCREST_date_time.xlsx
+
+<br>
+
+<br>
+
+**1 - Otolith record no sample**
+
+*Otolith box/vial numbers exist but there is 'No Sample'*
+
+```{r}
+oto_no_sample <- crest_biodata %>% 
+  filter(!is.na(OTOLITH_BOX) & !is.na(OTOLITH_SPECIMEN) & THERMALMARK=="No Sample")
+```
+
+`r nrow(oto_no_sample)` cases
+
+<br>
+
+
+
+
+**2 - Scale record no age or explanation**
+
+*Scale book and number but no age, and no explanation given (e.g., resorbed etc)*
+
+```{r}
+scale_no_age <- crest_biodata %>% 
+  filter(is.na(RESOLVED_AGE) & is.na(PART_AGE_CODE) & !is.na(SCALE_BOOK))
+```
+
+`r nrow(scale_no_age)` cases
+
+<br>
+
+
+
+
+**3.1 - CWT head label no result**
+
+*A CWT head label was submitted but the stock ID result is blank*
+
+```{r}
+CWT_no_ID <- crest_biodata %>% 
+  filter(!is.na(CWT_HEAD_LABEL) & is.na(CWT_RESULT))
+```
+
+`r nrow(CWT_no_ID)` cases
+
+<br>
+
+
+
+
+**3.2 - CWT head label no result**
+
+*CWT head label entered as '0'*
+
+```{r}
+CWT_zero <- crest_biodata %>% 
+  filter(CWT_HEAD_LABEL==0)
+```
+
+`r nrow(CWT_zero)` cases
+
+<br>
+
+
+
+
+**4 - Whatman sheet no result**
+
+*Whatman sheet/DNA tracking numbers exist but no GSI result (blank)*
+
+```{r}
+whatman_no_sample <- crest_biodata %>% 
+  filter(!is.na(SPECIMEN_REFERENCE_DNA_NO) & is.na(DNA_RESULTS_STOCK_1) | DNA_RESULTS_STOCK_1=="NO SAMPLE" ) 
+```
+
+`r nrow(whatman_no_sample)` cases
+
+<br>
+
+
+
+
+**5.1 - Resolved_stock_source CWT but DNA disagreement**
+
+*Stock ID assigned by CWT but GSI >=80% disagrees*
+
+```{r}
+CWT_DNA_id <- crest_biodata %>% 
+  filter(RESOLVED_STOCK_SOURCE=="CWT" & PROB_1>=0.8 & RESOLVED_STOCK_ORIGIN!=REGION_1_NAME)
+```
+
+`r nrow(CWT_DNA_id)` cases
+
+<br>
+
+
+
+
+**5.2 - Resolved_stock_source OTO but DNA disagreement**
+
+*Stock ID assigned by otolith thermal mark but GSI >=80% disagrees*
+
+```{r}
+oto_DNA_id <- crest_biodata %>% 
+  filter(RESOLVED_STOCK_SOURCE=="Otolith Stock" & PROB_1>=0.8 & RESOLVED_STOCK_ORIGIN!=REGION_1_NAME)
+```
+
+`r nrow(oto_DNA_id)` cases
+
+<br>
+
+
+
+
+**5.3 - Resolved_stock_source DNA LT 0.8**
+
+*A stock ID assigned by DNA with <80% certainty*
+
+```{r}
+DNA_uncert <- crest_biodata %>% 
+  filter(RESOLVED_STOCK_SOURCE=="DNA" & PROB_1<0.8)
+```
+
+`r nrow(DNA_uncert)` cases
+
+<br>
+
+
+
+
+**5.4 - Hatchery origin blank possible PBT**
+
+*Hatchery origin given as a blank, but some possibility for PBT (PROB=1.00). Note this should be approached with lots of caution and is stock-specific.*
+
+```{r}
+PBT_maybe <- crest_biodata %>% 
+  filter(is.na(HATCHERY_ORIGIN) & PROB_1==1 & is.na(DNA_STOCK_2))
+```
+
+`r nrow(PBT_maybe)` cases
+
+<br>
+
+
+
+
+**5.5 - SUS (assumed) that have ID methods available**
+
+*A CWT head label was submitted but the stock ID result is blank*
+
+```{r}
+sus_meta <- crest_biodata %>% 
+  filter(RESOLVED_STOCK_ORIGIN=="SUS (assumed)" & 
+           !is.na(CWT_RESULT) & CWT_RESULT!="No Tag" & 
+           !is.na(THERMALMARK) & !THERMALMARK%in%c("No Sample","Not Marked") &
+           !is.na(DNA_RESULTS_STOCK_1) & DNA_RESULTS_STOCK_1!="NO SAMPLE") 
+```
+
+`r nrow(sus_meta)` cases
+
+<br>
+
+
+
+
+**6 - Age discrepancy**
+
+*Cases where the RESOLVED_AGE does not match the catch YEAR minus the CWT_BROOD_YEAR*
+
+```{r}
+age_discrep <- crest_biodata %>%
+  filter((YEAR-CWT_BROOD_YEAR)!=RESOLVED_AGE) 
+```
+
+`r nrow(age_discrep)` cases
+
+<br>
+
+
+
+
+**7 - Blank Area_Name records**
+
+*Carry over - not sure if still needed*
+
+```{r}
+blank_AreaName <- crest_biodata %>%
+  filter(is.na(AREA_NAME))
+```
+
+`r nrow(blank_AreaName)` cases
+
+<br>
+
+
+
+
+**8 - Check for non-standard sex designations**
+
+*Sex designation does not fall as M or F - propose changing all other designations to "Unknown"*
+
+```{r}
+nonstd_sex <- crest_biodata %>%
+  filter(SEX %notin% c("M","F"))
+```
+
+`r nrow(nonstd_sex)` cases
+
+<br>
+
+
+
+
+
+
+
+
+
+```{r echo=F,warning=F, message=F}
+# ======================== CREATE REPORT ========================
+# TY Norah Brown for source code/idea
+# Summary table --------------------------- 
+explore_summary <- data.frame(Issue_ID=character(), Issue=character(), Count=integer(),
+                              Definition=character(), 
+                              stringsAsFactors=FALSE)
+
+explore_summary <- explore_summary  %>% 
+  add_row(Issue_ID="1", Issue="Oto missing", Count=nrow(oto_no_sample), Definition="Cases where there are otolith box/vial numbers but are returning 'No Sample'") %>% 
+  add_row(Issue_ID="2", Issue="Scale missing", Count=nrow(scale_no_age), Definition="Scale book and number but no age, and no explanation given (e.g., resorbed etc)") %>% 
+  add_row(Issue_ID="3.1", Issue="CWT missing", Count=nrow(CWT_no_ID), Definition="A CWT head label was submitted but the stock ID result is blank") %>% 
+  add_row(Issue_ID="3.2", Issue="CWT label 0", Count=nrow(CWT_zero), Definition="CWT head label entered as '0'") %>% 
+  add_row(Issue_ID="4", Issue="DNA missing", Count=nrow(whatman_no_sample), Definition="Whatman sheet/DNA tracking numbers exist but no GSI result (blank)") %>% 
+  add_row(Issue_ID="5.1", Issue="ID flag CWT-DNA", Count=nrow(CWT_DNA_id), Definition="Stock ID assigned by CWT but GSI >=80% disagrees") %>% 
+  add_row(Issue_ID="5.2", Issue="ID flag OTO-DNA", Count=nrow(oto_DNA_id), Definition="Stock ID assigned by otolith thermal mark but GSI >=80% disagrees") %>% 
+  add_row(Issue_ID="5.3", Issue="ID flag GSI LT 0.8", Count=nrow(DNA_uncert), Definition="A stock ID assigned by DNA with <80% certainty") %>% 
+  add_row(Issue_ID="5.4", Issue="ID flag PBT", Count=nrow(PBT_maybe), Definition="Hatchery origin given as a blank, but some possibility for PBT (PROB=1.00). Note this should be approached with lots of caution and is stock-specific.") %>%
+  add_row(Issue_ID="5.5", Issue="ID flag SUS(assumed)", Count=nrow(sus_meta), Definition="Fish identified as Southern US (assumed) but has other information available for stock ID (e.g., GSI)") %>%
+  add_row(Issue_ID="6", Issue="Age flag", Count=nrow(age_discrep), Definition="Cases where the RESOLVED_AGE does not match the catch YEAR minus the CWT_BROOD_YEAR") %>%
+  add_row(Issue_ID="7", Issue="Area_Name blank", Count=nrow(blank_AreaName), Definition="Carry over - not sure if still needed") %>%
+  add_row(Issue_ID="8", Issue="Non-std sex", Count=nrow(nonstd_sex), Definition="Sex designation does not fall as M or F - propose changing all other designations to 'Unknown'")
+
+# Create sheets --------------------------- 
+sheet_list<-list(Summary = explore_summary,
+                 "1 - Oto missing" = data.frame(oto_no_sample), 
+                 "2 - Scale missing" = data.frame(scale_no_age),
+                 "3.1 - CWT missing" = data.frame(CWT_no_ID),
+                 "3.2 - CWT label 0" = data.frame(CWT_zero), 
+                 "4 - DNA missing" = whatman_no_sample,
+                 "5.1 - ID flag CWT-DNA" = data.frame(CWT_DNA_id), 
+                 "5.2 - ID flag OTO-DNA" = data.frame(oto_DNA_id), 
+                 "5.3 - ID flag GSI LT 0.8" = data.frame(DNA_uncert), 
+                 "5.4 - ID flag PBT" = data.frame(PBT_maybe),
+                 "5.5 - ID flag SUS(assumed)" = data.frame(sus_meta),
+                 "6 - Age flag" = data.frame(age_discrep),
+                 "7 - Area_Name blank" = data.frame(blank_AreaName),
+                 "8 - Non-std sex" = data.frame(nonstd_sex)
+)
+
+
+
+# ======================== CREATE REPORT ========================
+
+# Detect and delete previous version of qcCREST --------------------------- 
+# On SharePoint
+unlink(x=paste0(
+  paste0(
+    "C:/Users", sep="/", Sys.info()[6], sep="/", 
+    "DFO-MPO/PAC-SCA Stock Assessment (STAD) - Terminal CN Run Recon/Communal data"
+    ),
+  sep="/",
+  grep("qcCREST",
+       list.files(path = paste0("C:/Users", sep="/", Sys.info()[6], sep="/",
+                                "DFO-MPO/PAC-SCA Stock Assessment (STAD) - Terminal CN Run Recon/Communal data" )),
+       value=T)
+  )
+)
+
+# On local machine
+unlink(x=paste0(
+  here("data_prep")
+  grep("qcCREST",
+       list.files(path = paste0("C:/Users", sep="/", Sys.info()[6], sep="/",
+                                "DFO-MPO/PAC-SCA Stock Assessment (STAD) - Terminal CN Run Recon/Communal data" )),
+       value=T)
+  )
+)
+
+
+# Export new qcCREST Excel report --------------------------- 
+# Will export to default Rmd working directory. 
+writexl::write_xlsx(x=sheet_list,
+           col_names=T, 
+           path = 
+             paste0(
+               paste0(
+                 "C:/Users", sep="/", Sys.info()[6], sep="/", 
+                 "DFO-MPO/PAC-SCA Stock Assessment (STAD) - Terminal CN Run Recon/Communal data"
+                 ),
+               sep="/",
+               paste0("qcCREST", sep="_", format(Sys.time(), sep="_", "%Y-%m-%d_%H%M"), ".xlsx")
+             )
+)
+
+
+# Copy to SharePoint
+file.copy(from = here("data_prep", "qcCREST.html"),
+          to   = paste0(
+                 "C:/Users", sep="/", Sys.info()[6], sep="/", 
+                 "DFO-MPO/PAC-SCA Stock Assessment (STAD) - Terminal CN Run Recon/Communal data"
+                 ))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
