@@ -341,7 +341,7 @@ unlink(x=paste0(
 
 # On local machine
 unlink(x=paste0(
-  here("data_prep")
+  here("data_prep"),
   grep("qcCREST",
        list.files(path = paste0("C:/Users", sep="/", Sys.info()[6], sep="/",
                                 "DFO-MPO/PAC-SCA Stock Assessment (STAD) - Terminal CN Run Recon/Communal data" )),
