@@ -1,5 +1,5 @@
 # Term RR stock group coding 
-# Automating Karin's hard work finally
+# Automating Karin's Termxx grouping decisions
 # February 2023
 
 # ======================== SET UP ========================
@@ -14,6 +14,8 @@ library(stringr)
 
 
 # Define helper functions ---------------------------
+"%notin%" <- Negate("%in%")
+
 getStreams <- function(query_doc, password = NULL) {
   nuseds_url <- "http://pac-salmon.dfo-mpo.gc.ca/Api.NuSEDS.v2/api/DynamicQuery/QueryResult"
   if(file.exists(query_doc)) {
@@ -51,7 +53,7 @@ getStreams <- function(query_doc, password = NULL) {
   return(nuseds_data)
 }
 
-"%notin%" <- Negate("%in%")
+
 
 
 # Read data from SharePoint ---------------------------
@@ -62,35 +64,31 @@ crest_biodata <- read_excel(path = paste0("C:/Users", sep="/", Sys.info()[6], se
 
 
 # Build stream-area aux file ---------------------------
+# This is for applying the "area.origin" field so that we can group fish as being from "Other Area 23", "Other Area 25", etc.
 streamAreas <- #left_join(
-  # Load stream by area from NuSEDS query (formerly 'NUstreams')
+  # Load stream by area from NuSEDS query (formerly 'NUstreams') - a little slow.
   #NUstreams <- 
-  getStreams("C:/Users/DAVIDSONKA/Documents/ANALYSIS/data/queryDocsMisc/nuseds_stream-area.json", password="babysharkd0d0!") %>% 
+  getStreams(paste0("C:/Users", sep="/", Sys.info()[6], sep="/", 
+                    "DFO-MPO/PAC-SCA Stock Assessment (STAD) - Terminal CN Run Recon/2022/Communal data/Escapement/nuseds_stream-area.json"), password="babysharkd0d0!") %>% 
     group_by(`Waterbody Name`) %>% 
     summarize(Area=unique(Area)) %>% 
-    mutate(Area = as.numeric(gsub('[A-z]+', '', Area)),
-           `Waterbody Name` = str_to_title(`Waterbody Name`)) %>%
+    # Create new columns:
+    mutate(Area = as.numeric(gsub('[A-z]+', '', Area)),                                                              # Remove the sub-area letter from Area name
+           `Waterbody Name` = str_to_title(`Waterbody Name`)) %>%                                                    # Make waterbody name title case ('Title Case') so that it can match CREST
     rename(area.origin=Area,
            RESOLVED_STOCK_ORIGIN=`Waterbody Name`)%>%
-  filter(RESOLVED_STOCK_ORIGIN!="Salmon River" & area.origin!=29) %>%   # Had to remove Salmon River in Fraser because was causing issues
-
-  # Load stream by area from NEWESCINDEX --- not helpful because it doesn't have "river" or "creek" appended to names. 
-  #INDstreams <- read_excel(path = paste0("C:/Users", sep="/", Sys.info()[6], sep="/", "DFO-MPO/PAC-SCA Stock Assessment (STAD) - Terminal CN Run Recon/Communal data/NEW ESCAPEMENT INDEX.xls"),
-  #                         sheet="EscData", skip=4) %>%
-  #  select(Area, System) %>%
-  #  group_by(System) %>%
-  #  summarize(Area=unique(Area)) %>%
-  #  rename(area.origin=Area,
-  #         RESOLVED_STOCK_ORIGIN=System)
-#) 
-
-  mutate(RESOLVED_STOCK_ORIGIN = case_when(RESOLVED_STOCK_ORIGIN=="Qualicum River" ~ "Big Qualicum River",
-                                           TRUE ~ as.character(RESOLVED_STOCK_ORIGIN))) %>%
-  ungroup() %>%
-  add_row(RESOLVED_STOCK_ORIGIN="Robertson Creek", area.origin=23) %>%
-  mutate(RESOLVED_STOCK_ORIGIN = case_when(RESOLVED_STOCK_ORIGIN=="Tranquil Creek" ~ "Tranquil River",
+  # Had to remove Salmon River in Fraser for now because it is causing issues:
+  filter(RESOLVED_STOCK_ORIGIN!="Salmon River" & area.origin!=29) %>%                                                
+  # Make some manual adjustments to names so that they match the CREST stock IDs:
+  mutate(RESOLVED_STOCK_ORIGIN = case_when(RESOLVED_STOCK_ORIGIN=="Qualicum River" ~ "Big Qualicum River",           
+                                           TRUE ~ as.character(RESOLVED_STOCK_ORIGIN)),
+         RESOLVED_STOCK_ORIGIN = case_when(RESOLVED_STOCK_ORIGIN=="Tranquil Creek" ~ "Tranquil River",
                                            TRUE ~ as.character(RESOLVED_STOCK_ORIGIN)),
          RESOLVED_STOCK_ORIGIN = gsub("Toquart", "Toquaht", RESOLVED_STOCK_ORIGIN)) %>%
+  ungroup() %>%
+  # More manual adjustments... ugh... adding systems that are not in NuSEDS:
+  add_row(RESOLVED_STOCK_ORIGIN="Robertson Creek", area.origin=23) %>%        
+  add_row(RESOLVED_STOCK_ORIGIN="Omega Pacific Hatchery", area.origin=23) %>%
   print()
 
 
@@ -102,17 +100,19 @@ streamAreas <- #left_join(
 
 
 # Define helper variables ---------------------------
+# Focal streams in each area to highlight
 focal_a22 <- c("CONUMA", "NITINAT", "ROBERTSON", "SAN JUAN")
 focal_a23 <- c("CONUMA", "NITIANT", "ROBERTSON")
 focal_a25 <- c("BEDWELL", "BURMAN", "CONUMA", "KAOUK", "MARBLE", "NITINAT", "ROBERTSON", "SAN JUAN")
+
+# Used to remove the river/creek suffix later
 stopwords <- c(" River", " Creek")
 
 
 # ======================== CODE TERM RUN GROUPS ========================
-crestREC_coded <- 
-  # Join CREST biodata and stream aux file ---------------------------
-  left_join(crest_biodata %>% 
-              filter(SAMPLE_TYPE=="Sport"), 
+crest_biodata_coded <- 
+  # Join CREST biodata and streamAreas aux file ---------------------------
+  left_join(crest_biodata, 
             streamAreas) %>% 
          
   mutate(
@@ -129,10 +129,13 @@ crestREC_coded <-
     `Term RR Roll Ups (R)` = case_when(
       #2.0 Base case if is.na(RESOLVED_STOCK_ORIGIN) make it "Unknown"
       is.na(RESOLVED_STOCK_ORIGIN) ~ "Unknown", 
-      #2.2 If it IS NOT from NWVI or SWVI, it gets "NON-WCVI"
+      #2.2 If it is NOT from NWVI or SWVI, it gets "NON-WCVI"
       RESOLVED_STOCK_ROLLUP%notin%c("NWVI", "SWVI") ~ "NON-WCVI",
+      #2.4 Special case: Change "Tofino Hatchery" to "Bedwell"
+      RESOLVED_STOCK_ORIGIN=="Tofino Hatchery" ~ "BEDWELL",
       #2.3 If it IS from NWVI or SWVI, this bit takes the stock ID from RESOLVED_STOCK_ORIGIN and removes 'creek' or 'river' so it just becomes uppercase BURMAN, CONUMA, etc.
       RESOLVED_STOCK_ROLLUP%in%c("NWVI", "SWVI") ~ toupper(gsub(paste0("\\b(",paste(stopwords, collapse="|"),")\\b"), "", RESOLVED_STOCK_ORIGIN))),
+      
     
     #3. Create 'TermSum' column ---------------------------
     `Term Sum (R)` = paste(`Hat/Nat (R)`, `Term RR Roll Ups (R)`, sep=" "),
@@ -190,51 +193,48 @@ crestREC_coded <-
   print()
 
 
-# test output
-write.csv(crestREC_coded%>%select(SAMPLE_TYPE:HATCHERY_ORIGIN,`Term RR Roll Ups`:`qcFlag_TermNIT=Term23?`), "C:/Users/DAVIDSONKA/Documents/test2.csv", row.names=F)
-
-
-
-# ======================== RE-JOIN FOR FULL DATABASE ========================
-# FILTERED BY SAMPLE_TYPE=="Sport" above - need to re-join to SAMPLE_TYPE!="Sport" for full biodata set (commercial etc)
-crest_biodata_coded <- full_join(crestREC_coded, 
-                                 crest_biodata %>%
-                                   filter(SAMPLE_TYPE!="Sport")) %>%
-  print()
-
-
-# QC check ---------------------------
-nrow(crest_biodata) == nrow(crest_biodata_coded)   # need this to be TRUE or else error in filtering
 
 
 
 
 # ======================== EXPORT TO SHAREPOINT ========================
-
-
+# note, can't append to existing Excel workbook because it's just too big - everything crashes and burns. 
 write_xlsx(crest_biodata_coded,
+           # Tell R where to write the file to
            path = 
+             # Create the directory
              paste0(
+               # Create the parent directory: "C:/Users/[DFO USERNAME autodetect]/DFO-MPO/PAC-SCA Stock Assessment (STAD) - Terminal CN Run Recon/Communal data/"
                paste0(
                  "C:/Users", sep="/", Sys.info()[6], sep="/", 
                  "DFO-MPO/PAC-SCA Stock Assessment (STAD) - Terminal CN Run Recon/Communal data"
                  ),
                sep="/",
+               # Remove the .xlsx ending of the files we find below
                gsub(".xlsx", "", 
+                    # Look for files that start with "WCVI_Chinook_Run_Reconstruction_Project_Biological_Data_with_FOS" in the parent directory
                     grep("WCVI_Chinook_Run_Reconstruction_Project_Biological_Data_with_FOS",
                          list.files(path = paste0("C:/Users", sep="/", Sys.info()[6], sep="/",
                                                   "DFO-MPO/PAC-SCA Stock Assessment (STAD) - Terminal CN Run Recon/Communal data" )),
                          value=T
                          )
                     ),
-             sep="_",
-             "CODED",
-             sep="_",
-             format(Sys.time(), "%Y-%m-%d_%H%M"),
-             ".xlsx"
+             # Append "_CODED_[today's date and time].xlsx" to the file name we find above:   
+             sep="_", "CODED", sep="_", format(Sys.time(), "%Y-%m-%d_%H%M"), ".xlsx"
              )
 )
            
+
+
+
+
+
+
+
+
+
+
+
 
 
  
